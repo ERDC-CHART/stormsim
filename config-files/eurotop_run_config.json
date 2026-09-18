@@ -1,8 +1,14 @@
 [
   {
-    "pse_geometry": "data/eurotop/pse_geometry.json",
-    "lc_data": "data/outputs/hydro-manipulator/EventDate_LC.parquet",
-    "stage_vol_file": "data/eurotop/dummy_stage_vol.csv",
-    "outpath": "data/outputs/eurotop"
+    "inputs": {
+      "pse_geometry": "data/eurotop/pse_geometry.json",
+      "lc_data": "data/outputs/hydro-manipulator/EventDate_LC.parquet",
+      "stage_vol_file": "data/eurotop/dummy_stage_vol.csv"
+    },
+    "outputs": {
+      "storage_type": "local",
+      "local_directory": "data/outputs/eurotop",
+      "filename": ""
+    }
   }
 ]
