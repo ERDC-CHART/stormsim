@@ -20,7 +20,11 @@ import numbers
 
 class runup_and_ot_eurotop_2018:
 
-    def __init__(self,args):
+    def __init__(self,args,rng=None):
+        # Generator for the EurOtop 5.18 coefficient uncertainty. Callers pass
+        # a seeded one to make a run reproducible; the default draws from
+        # entropy, as this class always did.
+        self.rng = rng if rng is not None else np.random.default_rng()
         # ------ INITIAL DATA PREP -----
         # Define Structure Type
         self.structure_type = args['type'] # 1 = sloping sea dike & embankment seawall, 2 - armoured rubble slopes and mounds, 3 - vertical, battered or steep walls
@@ -240,7 +244,7 @@ class runup_and_ot_eurotop_2018:
         g_beta_ot = self.ifactors_gamma_beta_overtoping # Wave Obliqueness Overtopping Influence Factor
 
         # Random Uncertainty
-        randn = np.random.randn()
+        randn = self.rng.standard_normal()
 
         # EurOtop Runup Eq 5.6
         R2p_a = np.nanmin([self.forcing_Hm0*self.c3_runup/(1/self.structure_seaward_slope) + 1.6 , (3*self.forcing_Hm0)], axis=0)

@@ -1,6 +1,39 @@
+import hashlib
+
 import numpy as np
 import pandas as pd
 from stormsim.eurotop.runup_and_ot_eurotop_2018 import runup_and_ot_eurotop_2018
+
+DEFAULT_SEED = 0
+
+
+def _first(stm, key):
+    """First value of a storm field, whether it arrived as a Series or a scalar."""
+    value = stm[key] if key in stm else None
+    if hasattr(value, "iloc"):
+        return value.iloc[0] if len(value) else None
+    if hasattr(value, "__len__") and not isinstance(value, str):
+        return value[0] if len(value) else None
+    return value
+
+
+def storm_rng(seed, *identity):
+    """
+    Generator for one storm's EurOtop uncertainty draw.
+
+    The draw has to stay random across storms — one perturbation reused for
+    every storm would be a systematic bias, not uncertainty — while a rerun
+    of the same configuration reproduces it. Mixing the storm's identity into
+    the seed gives both. seed=None restores unseeded behaviour for callers
+    that deliberately want a fresh ensemble member each run.
+    """
+    if seed is None:
+        return np.random.default_rng()
+    digest = hashlib.blake2b(
+        "|".join(str(part) for part in identity).encode(), digest_size=8
+    ).digest()
+    return np.random.default_rng([int(seed), int.from_bytes(digest, "big")])
+
 
 # ---------------------------------------------------------
 # Compute responses using G2 approach
@@ -33,9 +66,9 @@ def _compute_g2_response(stm, args, pse_config):
 # ---------------------------------------------------------
 # Compute responses using Eurotop 2018 approach
 # ---------------------------------------------------------
-def _compute_eurotop_response(stm, args, pse_config, s_v_file):
+def _compute_eurotop_response(stm, args, pse_config, s_v_file, rng=None):
     """Computes response using the Eurotop 2018 empirical formulas."""
-    A = runup_and_ot_eurotop_2018(args)
+    A = runup_and_ot_eurotop_2018(args, rng=rng)
     A.structure_response()
 
     # Compute dt
@@ -68,7 +101,7 @@ def _compute_eurotop_response(stm, args, pse_config, s_v_file):
 # ---------------------------------------------------------
 # Compute storm metrics (q, R2p, Q, stage)
 # ---------------------------------------------------------
-def compute_storm_response(stm, args, pse_config, s_v_file):
+def compute_storm_response(stm, args, pse_config, s_v_file, seed=DEFAULT_SEED):
     # Prepare forcing fields
     SWL  = stm["water_elevation"].to_numpy()
     Hm0  = stm["wave_height"].to_numpy()
@@ -96,6 +129,15 @@ def compute_storm_response(stm, args, pse_config, s_v_file):
 
     # Delegate computation based on structure type
     if pse_config["type"] == 0:
+        # G2 has no uncertainty draw, so it needs no generator
         return _compute_g2_response(stm, args, pse_config)
     else:
-        return _compute_eurotop_response(stm, args, pse_config, s_v_file)
+        rng = storm_rng(
+            seed,
+            pse_config.get("name"),
+            _first(stm, "location_id"),
+            _first(stm, "lifecycle"),
+            _first(stm, "storm_id"),
+            _first(stm, "stormevent_id"),
+        )
+        return _compute_eurotop_response(stm, args, pse_config, s_v_file, rng=rng)
