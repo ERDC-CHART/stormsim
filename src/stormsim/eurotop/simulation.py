@@ -62,14 +62,16 @@ def run_eurotop(config: Dict[str, Any], is_lambda: bool = False, storage_context
             # for now passing the raw path which pandas can handle if s3://
             process_lc_file(lc_file, config, pse_xsec, s_v_file, transect_outpath)
 
-    # Aggregation is a post-processing step; preserve the completed transect outputs
-    # when it cannot run.
+    # Aggregation is a post-processing step; preserve the completed transect
+    # outputs when it cannot run, but do not call the run a success. A caller
+    # that only reads status would otherwise record a finished job for a run
+    # that produced no aggregate at all.
     try:
         aggregation_result = aggregate_q(outpath, s_v_file)
     except Exception as error:
         print(f"Warning: Response aggregation failed: {error}")
         return {
-            "status": "success",
+            "status": "partial",
             "output": outpath,
             "aggregated": 0,
             "aggregation_error": str(error),

@@ -5,7 +5,7 @@ from stormsim.hydrograph_manipulator import run_hydro_manipulator
 
 def load_config(path: Path):
     with open(path, 'r') as f:
-        return json.load(f)
+        return json.load(f)[0]  # config is a list of 1 dict, as eurotop's is
 
 def main():
     parser = argparse.ArgumentParser(description="Hydrograph Manipulator CLI Wrapper")

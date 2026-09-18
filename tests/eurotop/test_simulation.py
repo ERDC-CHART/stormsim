@@ -41,8 +41,10 @@ def test_run_eurotop_reports_aggregation_failure_as_partial_success(tmp_path, mo
 
     result = simulation.run_eurotop({})
 
+    # not "success": the transect outputs survive, but a caller that reads
+    # only status must not record this as a finished run
     assert result == {
-        "status": "success",
+        "status": "partial",
         "output": paths["output"],
         "aggregated": 0,
         "aggregation_error": "S3 write denied",

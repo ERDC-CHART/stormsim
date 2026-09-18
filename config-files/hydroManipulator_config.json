@@ -1,15 +1,22 @@
 [
   {
+    "inputs": {
+      "node_data_path": "data/chs-files/hdf5-examples/nodeID_64_data",
+      "lc_path": "data/outputs/lcgen/EventDate_LC.csv",
+      "tide_config": "config-files/tidal_gauge.json",
+      "chs_meta_dir": "data/chs-files/regional-files/"
+    },
+    "outputs": {
+      "storage_type": "local",
+      "local_directory": "data/outputs/hydro-manipulator",
+      "filename": "EventDate_LC.parquet"
+    },
     "storm_types": "TC",
-    "node_data_path": "data/chs-files/hdf5-examples/nodeID_64_data",
-    "lc_path": "data/outputs/lcgen/EventDate_LC.csv",
     "add_tides": false,
-    "tide_config": "config-files/tidal_gauge.json",
     "add_slr": true,
     "slr_projection": "usace_2019",
     "slr_projection_scenario": "low",
     "add_depth_limitation": true,
-    "outpath": "data/outputs/hydro-manipulator",
     "write_single_file": true
   }
 ]
