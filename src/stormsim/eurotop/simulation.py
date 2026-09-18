@@ -65,7 +65,7 @@ def run_eurotop(config: Dict[str, Any], is_lambda: bool = False, storage_context
     # Aggregation is a post-processing step; preserve the completed transect outputs
     # when it cannot run.
     try:
-        aggregation_result = aggregate_q(outpath)
+        aggregation_result = aggregate_q(outpath, s_v_file)
     except Exception as error:
         print(f"Warning: Response aggregation failed: {error}")
         return {

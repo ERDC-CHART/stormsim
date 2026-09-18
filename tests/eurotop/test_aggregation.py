@@ -135,3 +135,53 @@ def test_aggregate_q_accepts_string_location_ids(tmp_path):
     assert result == {"pairs_written": 1, "output_paths": [str(output_path)]}
     output = pd.read_parquet(output_path)
     assert output["q_total"].tolist() == [0.1 + 0.3, 0.2 + 0.4]
+
+
+def _write_response_with_volume(transect_dir, filename, rates, volumes, stages):
+    pd.DataFrame(
+        {
+            "location_id": 1,
+            "lifecycle": 1,
+            "date": ["2025-01-01"] * len(rates),
+            "overtopping_rate": rates,
+            "overtopping_volume": volumes,
+            "stage": stages,
+        }
+    ).to_parquet(transect_dir / filename, index=False)
+
+
+def test_aggregate_q_derives_reach_stage_from_summed_volume(tmp_path):
+    # Each transect's overtopping_volume already carries its own dt and
+    # protection length, so the reach pool is the row-wise sum, not a stage
+    # copied off whichever transect happened to sort first.
+    transect_one = tmp_path / "transect-one"
+    transect_two = tmp_path / "transect-two"
+    transect_one.mkdir()
+    transect_two.mkdir()
+    filename = "lifecycle_responses_loc_1_lc_1.parquet"
+    _write_response_with_volume(transect_one, filename, [0.1, 0.2], [0.0, 4.0], [0.0, 1.0])
+    _write_response_with_volume(transect_two, filename, [0.3, 0.4], [0.0, 6.0], [0.0, 1.5])
+
+    stage_volume = pd.DataFrame({"volume": [0.0, 10.0], "stage": [0.0, 5.0]})
+
+    aggregate_q(str(tmp_path), stage_volume)
+
+    output = pd.read_parquet(
+        tmp_path / "aggregate_responses" / "q_aggregate_loc_1_lc_1.parquet"
+    )
+    # total volume 10 -> top of the curve, above either transect on its own
+    assert output["stage"].tolist() == [0.0, 5.0]
+
+
+def test_aggregate_q_omits_stage_without_a_stage_volume_curve(tmp_path):
+    transect_one = tmp_path / "transect-one"
+    transect_one.mkdir()
+    filename = "lifecycle_responses_loc_1_lc_1.parquet"
+    _write_response_with_volume(transect_one, filename, [0.1], [4.0], [1.0])
+
+    aggregate_q(str(tmp_path))
+
+    output = pd.read_parquet(
+        tmp_path / "aggregate_responses" / "q_aggregate_loc_1_lc_1.parquet"
+    )
+    assert "stage" not in output.columns

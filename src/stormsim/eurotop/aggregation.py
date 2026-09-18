@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 
@@ -23,11 +24,65 @@ def _sanitize_header(name: str) -> str:
     return sanitized.strip("_")
 
 
-def aggregate_q(transect_sim_path: str) -> Dict[str, Any]:
+def _load_stage_volume(stage_volume: Any) -> Optional[pd.DataFrame]:
+    """Accept an already-loaded stage-volume table or a path to one."""
+    if stage_volume is None or isinstance(stage_volume, pd.DataFrame):
+        return stage_volume
+    return pd.read_csv(stage_volume)
+
+
+def _aggregate_stage(
+    data_list: List[Tuple[str, pd.DataFrame]], stage_volume: pd.DataFrame
+) -> Optional[np.ndarray]:
+    """
+    Reach-level water level from the total volume delivered behind the reach.
+
+    Each transect's overtopping_volume is already cumulative within a storm and
+    already carries that transect's own dt and protection_length (see
+    eurotop.responses._compute_eurotop_response), so the reach total is a plain
+    row-wise sum. The stage-volume curve then maps the pooled volume to one
+    water level for the whole reach.
+
+    Summing q_total and converting once would be wrong whenever transects have
+    different protection lengths, which is why the volumes are summed instead.
+    """
+    if any("overtopping_volume" not in df.columns for _, df in data_list):
+        print("Warning: overtopping_volume missing; cannot derive reach stage.")
+        return None
+
+    volume_total = np.sum(
+        [df["overtopping_volume"].to_numpy(dtype=float) for _, df in data_list], axis=0
+    )
+
+    if np.nansum(volume_total) > 0:
+        return np.interp(
+            volume_total,
+            stage_volume.iloc[:, 0].to_numpy(),
+            stage_volume.iloc[:, 1].to_numpy(),
+        )
+
+    # ponytail: G2 transects (pse type 0) overtop nothing and carry a shoreline
+    # water level instead of a pool level, so there is no volume to convert.
+    # The reach value is then the highest level along it.
+    stages = [df["stage"].to_numpy(dtype=float) for _, df in data_list if "stage" in df]
+    if not stages:
+        return None
+    print("Warning: no overtopping volume; using max transect stage (G2 approach).")
+    return np.maximum.reduce(stages)
+
+
+def aggregate_q(
+    transect_sim_path: str, stage_volume: Any = None
+) -> Dict[str, Any]:
     """
     Aggregates overtopping rates (q) across multiple transects for each location
     and lifecycle. Writes one parquet per (location, lc) pair to
     <transect_sim_path>/aggregate_responses/.
+
+    Pass stage_volume (the stage-volume table, or a path to it) to also write a
+    reach-level `stage` column derived from the summed overtopping volume.
+    Downstream consequence modelling consumes `stage`, so without it the
+    aggregate cannot stand in for the per-transect responses.
 
     Input directory layout:
         <transect_sim_path>/
@@ -49,8 +104,10 @@ def aggregate_q(transect_sim_path: str) -> Dict[str, Any]:
         - transects disagree on row count for a (location, lc) pair,
           which indicates corrupt upstream output
     """
+    stage_volume = _load_stage_volume(stage_volume)
+
     if transect_sim_path.startswith("s3://"):
-        return _aggregate_q_s3(transect_sim_path)
+        return _aggregate_q_s3(transect_sim_path, stage_volume)
 
     base_path = Path(transect_sim_path)
     if not base_path.is_dir():
@@ -119,6 +176,10 @@ def aggregate_q(transect_sim_path: str) -> Dict[str, Any]:
             q_cols.append(col)
 
         out_df["q_total"] = out_df[q_cols].sum(axis=1)
+        if stage_volume is not None:
+            stage_values = _aggregate_stage(data_list, stage_volume)
+            if stage_values is not None:
+                out_df["stage"] = stage_values
         out_name = f"q_aggregate_loc_{location_id}_lc_{lc_id}.parquet"
         out_path = output_dir / out_name
         out_df.to_parquet(out_path)
@@ -131,7 +192,9 @@ def aggregate_q(transect_sim_path: str) -> Dict[str, Any]:
     }
 
 
-def _aggregate_q_s3(transect_sim_path: str) -> Dict[str, Any]:
+def _aggregate_q_s3(
+    transect_sim_path: str, stage_volume: Optional[pd.DataFrame] = None
+) -> Dict[str, Any]:
     """Aggregate transect response parquet files stored under an S3 prefix."""
     from urllib.parse import urlparse
 
@@ -205,6 +268,10 @@ def _aggregate_q_s3(transect_sim_path: str) -> Dict[str, Any]:
             q_cols.append(col)
 
         out_df["q_total"] = out_df[q_cols].sum(axis=1)
+        if stage_volume is not None:
+            stage_values = _aggregate_stage(data_list, stage_volume)
+            if stage_values is not None:
+                out_df["stage"] = stage_values
         out_name = f"q_aggregate_loc_{location_id}_lc_{lc_id}.parquet"
         output_path = _join_storage_path(output_prefix, out_name)
         out_df.to_parquet(output_path, index=False)
@@ -227,6 +294,8 @@ def run_aggregate_q(
 
     Config keys:
       inputs.transect_sim_path — directory containing per-transect eurotop output subfolders
+      inputs.stage_vol_file — optional stage-volume table; supplying it adds the
+        reach-level `stage` column that consequence modelling reads
 
     Output is written to <transect_sim_path>/aggregate_responses/.
     """
@@ -234,7 +303,8 @@ def run_aggregate_q(
 
     ctx = storage_context or StorageContext(config, is_lambda=is_lambda)
     transect_sim_path = ctx.get_input_path("transect_sim_path")
-    aggregation_result = aggregate_q(transect_sim_path)
+    stage_vol_file = ctx.get_input_path("stage_vol_file") or None
+    aggregation_result = aggregate_q(transect_sim_path, stage_vol_file)
     output_dir = _join_storage_path(transect_sim_path, "aggregate_responses")
     return {
         "status": "success",

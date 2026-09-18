@@ -34,7 +34,7 @@ def test_run_eurotop_reports_aggregation_failure_as_partial_success(tmp_path, mo
     paths = _config(tmp_path)
     monkeypatch.setattr(simulation, "StorageContext", lambda *_args, **_kwargs: _StorageContext(paths))
 
-    def fail_aggregation(_outpath):
+    def fail_aggregation(_outpath, _stage_volume=None):
         raise OSError("S3 write denied")
 
     monkeypatch.setattr(simulation, "aggregate_q", fail_aggregation)
@@ -52,16 +52,22 @@ def test_run_eurotop_reports_aggregation_failure_as_partial_success(tmp_path, mo
 def test_run_eurotop_reports_aggregation_results(tmp_path, monkeypatch):
     paths = _config(tmp_path)
     monkeypatch.setattr(simulation, "StorageContext", lambda *_args, **_kwargs: _StorageContext(paths))
-    monkeypatch.setattr(
-        simulation,
-        "aggregate_q",
-        lambda _outpath: {
+    seen = {}
+
+    def record_aggregation(_outpath, stage_volume=None):
+        seen["stage_volume"] = stage_volume
+        return {
             "pairs_written": 2,
             "output_paths": ["aggregate_responses/q_aggregate_loc_1_lc_2.parquet"],
-        },
-    )
+        }
+
+    monkeypatch.setattr(simulation, "aggregate_q", record_aggregation)
 
     result = simulation.run_eurotop({})
+
+    # the stage-volume table has to reach aggregation, or the aggregate cannot
+    # carry the stage column consequence modelling reads
+    assert seen["stage_volume"] is not None
 
     assert result == {
         "status": "success",
