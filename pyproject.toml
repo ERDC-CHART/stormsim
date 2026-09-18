@@ -27,8 +27,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/trietmnj/stormsim"
-Repository = "https://github.com/trietmnj/stormsim"
+Homepage = "https://github.com/ERDC-CHART/stormsim"
+Repository = "https://github.com/ERDC-CHART/stormsim"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

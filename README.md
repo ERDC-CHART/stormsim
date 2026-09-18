@@ -40,14 +40,14 @@ Computes stage-volume relationships from a DEM clipped to a model area polygon.
 
 **As a developer (editable):**
 ```bash
-git clone https://github.com/trietmnj/stormsim.git
+git clone https://github.com/ERDC-CHART/stormsim.git
 cd stormsim
 uv sync
 ```
 
 **As a library:**
 ```bash
-uv add "stormsim @ git+https://github.com/trietmnj/stormsim.git"
+uv add "stormsim @ git+https://github.com/ERDC-CHART/stormsim.git"
 ```
 
 ### Running Scripts

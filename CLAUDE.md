@@ -33,7 +33,7 @@ uv run pytest tests/
 uv run pytest tests/hazard_curves/test_jpm.py -v
 
 # Install as a dependency in another project
-uv add "stormsim @ git+https://github.com/trietmnj/stormsim.git"
+uv add "stormsim @ git+https://github.com/ERDC-CHART/stormsim.git"
 ```
 
 ## Pipeline Architecture
