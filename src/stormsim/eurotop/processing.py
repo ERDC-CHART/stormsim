@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from stormsim.utilities.csv_utils import split_df_on_zero, merge_dicts
 from stormsim.utilities.chs_utils import write_parquet
-from stormsim.eurotop.responses import compute_storm_response
+from stormsim.eurotop.responses import DEFAULT_SEED, compute_storm_response
 
 OUTPUT_COL_ORDER = [
     "location_id", "date", "stormevent_id", "storm_id", "lifecycle", "runup", "overtopping_rate",
@@ -26,15 +26,18 @@ def process_lc_file(lc_file, config, pse_config, s_v_file, outfol):
 
     print("COMPUTING responses...")
 
+    # "seed": null in the config opts back into an unseeded run
+    seed = config.get("seed", DEFAULT_SEED)
+
     if config["single_file"]:
         stm_list = split_df_on_zero(lc_data, "hydro_tstp")
         results = [
-            compute_storm_response(stm, args, pse_config, s_v_file)
+            compute_storm_response(stm, args, pse_config, s_v_file, seed=seed)
             for stm in stm_list
         ]
         print(f"   {len(results)} storm segments processed")
     else:
-        results = [compute_storm_response(lc_data, args, pse_config, s_v_file)]
+        results = [compute_storm_response(lc_data, args, pse_config, s_v_file, seed=seed)]
 
     print("WRITING data...")
     _save_results(results, base_outname, outfol)
