@@ -54,7 +54,8 @@ def run_eurotop(config: Dict[str, Any], is_lambda: bool = False, storage_context
     for lc_file in file_to_process:
         for pse_xsec in pse_config:
             # Make Sure Each Transect Has Its Own Folder
-            transect_outpath = os.path.join(outpath, _sanitize_header(pse_xsec["name"]))
+            transect_id = pse_xsec.get("id") or _sanitize_header(pse_xsec["name"])
+            transect_outpath = os.path.join(outpath, str(transect_id))
             if not transect_outpath.startswith("s3://"):
                 os.makedirs(transect_outpath, exist_ok=True)
             
