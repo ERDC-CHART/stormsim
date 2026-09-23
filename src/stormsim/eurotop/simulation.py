@@ -52,9 +52,11 @@ def run_eurotop(config: Dict[str, Any], is_lambda: bool = False, storage_context
     # Assuming 1 Savepoint Per Reach
     # All transects will use the same forcing data for now
     for lc_file in file_to_process:
-        for pse_xsec in pse_config:
-            # Make Sure Each Transect Has Its Own Folder
-            transect_id = pse_xsec.get("id") or _sanitize_header(pse_xsec["name"])
+        for index, pse_xsec in enumerate(pse_config):
+            # Make Sure Each Transect Has Its Own Folder. The API sends the PSE
+            # id; without one, the index keeps names that sanitize alike (or to
+            # nothing) from sharing a folder and overwriting each other.
+            transect_id = pse_xsec.get("id") or f"{index:02d}_{_sanitize_header(pse_xsec['name'])}".rstrip("_")
             transect_outpath = os.path.join(outpath, str(transect_id))
             if not transect_outpath.startswith("s3://"):
                 os.makedirs(transect_outpath, exist_ok=True)

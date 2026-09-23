@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 from stormsim.utilities.csv_utils import split_df_on_zero, merge_dicts
 from stormsim.utilities.chs_utils import write_parquet
@@ -56,8 +57,11 @@ def _save_results(results, base_outname, outfol):
     for (loc_id, lc), group in df_out.groupby(["location_id", "lifecycle"]):
         group_dict = group.to_dict(orient="list")
 
-        # Build location-specific base filename
-        loc_base = base_outname.replace(".parquet", f"_loc_{loc_id}_lc_{lc}.parquet")
+        # Build location-specific base filename. The location is user-typed
+        # and lands in an S3 key, where pyarrow rejects spaces; keep only what
+        # aggregate_q's loc_ pattern accepts. The location_id column is untouched.
+        loc_key = re.sub(r"[^A-Za-z0-9-]+", "-", str(loc_id)).strip("-") or "unknown"
+        loc_base = base_outname.replace(".parquet", f"_loc_{loc_key}_lc_{lc}.parquet")
 
         # Save full responses
         full_results = {k: group_dict[k] for k in OUTPUT_COL_ORDER if k in group_dict}

@@ -1,4 +1,5 @@
 import json
+import os
 
 from stormsim.eurotop import simulation
 
@@ -78,3 +79,28 @@ def test_run_eurotop_reports_aggregation_results(tmp_path, monkeypatch):
         "pairs_written": 2,
         "output_paths": ["aggregate_responses/q_aggregate_loc_1_lc_2.parquet"],
     }
+
+
+def test_run_eurotop_gives_each_pse_its_own_folder(tmp_path, monkeypatch):
+    paths = _config(tmp_path)
+    (tmp_path / "lifecycles" / "lc.parquet").write_bytes(b"")
+    pses = [
+        {"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "Sea Wall 1"},
+        {"name": "Sea Wall 1"},
+        {"name": "Sea-Wall 1"},
+        {"name": "***"},
+    ]
+    (tmp_path / "geometry.json").write_text(json.dumps(pses))
+    monkeypatch.setattr(simulation, "StorageContext", lambda *_args, **_kwargs: _StorageContext(paths))
+    folders = []
+    monkeypatch.setattr(
+        simulation, "process_lc_file",
+        lambda _lc, _config, _pse, _sv, outfol: folders.append(os.path.basename(outfol)),
+    )
+    monkeypatch.setattr(simulation, "aggregate_q", lambda *_args, **_kwargs: {"pairs_written": 0, "output_paths": []})
+
+    simulation.run_eurotop({})
+
+    # the id when the API sends one; otherwise names that sanitize alike, or
+    # to nothing, must still land in distinct, non-empty folders
+    assert folders == ["3fa85f64-5717-4562-b3fc-2c963f66afa6", "01_Sea_Wall_1", "02_Sea_Wall_1", "03"]
