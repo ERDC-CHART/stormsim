@@ -69,8 +69,10 @@ def run_eurotop(config: Dict[str, Any], is_lambda: bool = False, storage_context
     # outputs when it cannot run, but do not call the run a success. A caller
     # that only reads status would otherwise record a finished job for a run
     # that produced no aggregate at all.
+    # Folders carry the PSE id; the aggregate's columns should carry its name
+    labels = {str(p["id"]): p["name"] for p in pse_config if p.get("id")}
     try:
-        aggregation_result = aggregate_q(outpath, s_v_file)
+        aggregation_result = aggregate_q(outpath, s_v_file, labels=labels)
     except Exception as error:
         print(f"Warning: Response aggregation failed: {error}")
         return {
