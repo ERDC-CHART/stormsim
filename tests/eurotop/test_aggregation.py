@@ -185,3 +185,20 @@ def test_aggregate_q_omits_stage_without_a_stage_volume_curve(tmp_path):
         tmp_path / "aggregate_responses" / "q_aggregate_loc_1_lc_1.parquet"
     )
     assert "stage" not in output.columns
+
+
+def test_aggregate_q_names_columns_after_the_pse(tmp_path):
+    ids = ["3fa85f64-5717-4562-b3fc-2c963f66afa6", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"]
+    filename = "lifecycle_responses_loc_1_lc_1.parquet"
+    for folder in [*ids, "legacy-folder"]:
+        (tmp_path / folder).mkdir()
+        _write_response(tmp_path / folder, filename, [0.1, 0.2])
+
+    # two PSEs may share a name; a folder with no label keeps its own
+    labels = {ids[0]: "Sea Wall", ids[1]: "Sea Wall"}
+    result = aggregate_q(str(tmp_path), labels=labels)
+
+    columns = list(pd.read_parquet(result["output_paths"][0]).columns)
+    assert [c for c in columns if c.startswith("q_")] == [
+        "q_Sea_Wall", "q_Sea_Wall_9b1deb4d", "q_legacy_folder", "q_total",
+    ]

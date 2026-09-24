@@ -24,6 +24,17 @@ def _sanitize_header(name: str) -> str:
     return sanitized.strip("_")
 
 
+def _q_column(
+    transect_name: str, labels: Optional[Dict[str, str]], taken: List[str]
+) -> str:
+    """Name a transect's q column after its PSE, not the id its folder carries."""
+    column = f"q_{_sanitize_header((labels or {}).get(transect_name, transect_name))}"
+    if column in taken:
+        # PSE names are not unique; the folder name breaks the tie
+        column = f"{column}_{_sanitize_header(transect_name)[:8]}"
+    return column
+
+
 def _load_stage_volume(stage_volume: Any) -> Optional[pd.DataFrame]:
     """Accept an already-loaded stage-volume table or a path to one."""
     if stage_volume is None or isinstance(stage_volume, pd.DataFrame):
@@ -72,7 +83,9 @@ def _aggregate_stage(
 
 
 def aggregate_q(
-    transect_sim_path: str, stage_volume: Any = None
+    transect_sim_path: str,
+    stage_volume: Any = None,
+    labels: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Aggregates overtopping rates (q) across multiple transects for each location
@@ -83,6 +96,9 @@ def aggregate_q(
     reach-level `stage` column derived from the summed overtopping volume.
     Downstream consequence modelling consumes `stage`, so without it the
     aggregate cannot stand in for the per-transect responses.
+
+    Pass labels ({transect folder: PSE name}) to name each q_ column after
+    its PSE; folders missing from it keep their own name.
 
     Input directory layout:
         <transect_sim_path>/
@@ -107,7 +123,7 @@ def aggregate_q(
     stage_volume = _load_stage_volume(stage_volume)
 
     if transect_sim_path.startswith("s3://"):
-        return _aggregate_q_s3(transect_sim_path, stage_volume)
+        return _aggregate_q_s3(transect_sim_path, stage_volume, labels)
 
     base_path = Path(transect_sim_path)
     if not base_path.is_dir():
@@ -171,7 +187,7 @@ def aggregate_q(
                     f"{location_id}, LC {lc_id}: {len(df)} rows vs "
                     f"{len(out_df)} in {data_list[0][0]}"
                 )
-            col = f"q_{_sanitize_header(transect_name)}"
+            col = _q_column(transect_name, labels, q_cols)
             out_df[col] = df["overtopping_rate"].values
             q_cols.append(col)
 
@@ -193,7 +209,9 @@ def aggregate_q(
 
 
 def _aggregate_q_s3(
-    transect_sim_path: str, stage_volume: Optional[pd.DataFrame] = None
+    transect_sim_path: str,
+    stage_volume: Optional[pd.DataFrame] = None,
+    labels: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Aggregate transect response parquet files stored under an S3 prefix."""
     from urllib.parse import urlparse
@@ -263,7 +281,7 @@ def _aggregate_q_s3(
                     f"{location_id}, LC {lc_id}: {len(df)} rows vs "
                     f"{len(out_df)} in {data_list[0][0]}"
                 )
-            col = f"q_{_sanitize_header(transect_name)}"
+            col = _q_column(transect_name, labels, q_cols)
             out_df[col] = df["overtopping_rate"].values
             q_cols.append(col)
 
