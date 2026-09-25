@@ -1,4 +1,5 @@
 import json
+import os
 
 from stormsim.eurotop import simulation
 
@@ -34,7 +35,7 @@ def test_run_eurotop_reports_aggregation_failure_as_partial_success(tmp_path, mo
     paths = _config(tmp_path)
     monkeypatch.setattr(simulation, "StorageContext", lambda *_args, **_kwargs: _StorageContext(paths))
 
-    def fail_aggregation(_outpath, _stage_volume=None):
+    def fail_aggregation(_outpath, _stage_volume=None, labels=None):
         raise OSError("S3 write denied")
 
     monkeypatch.setattr(simulation, "aggregate_q", fail_aggregation)
@@ -56,7 +57,7 @@ def test_run_eurotop_reports_aggregation_results(tmp_path, monkeypatch):
     monkeypatch.setattr(simulation, "StorageContext", lambda *_args, **_kwargs: _StorageContext(paths))
     seen = {}
 
-    def record_aggregation(_outpath, stage_volume=None):
+    def record_aggregation(_outpath, stage_volume=None, labels=None):
         seen["stage_volume"] = stage_volume
         return {
             "pairs_written": 2,
@@ -78,3 +79,36 @@ def test_run_eurotop_reports_aggregation_results(tmp_path, monkeypatch):
         "pairs_written": 2,
         "output_paths": ["aggregate_responses/q_aggregate_loc_1_lc_2.parquet"],
     }
+
+
+def test_run_eurotop_gives_each_pse_its_own_folder(tmp_path, monkeypatch):
+    paths = _config(tmp_path)
+    (tmp_path / "lifecycles" / "lc.parquet").write_bytes(b"")
+    pses = [
+        {"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "Sea Wall 1"},
+        {"name": "Sea Wall 1"},
+        {"name": "Sea-Wall 1"},
+        {"name": "***"},
+    ]
+    (tmp_path / "geometry.json").write_text(json.dumps(pses))
+    monkeypatch.setattr(simulation, "StorageContext", lambda *_args, **_kwargs: _StorageContext(paths))
+    folders = []
+    monkeypatch.setattr(
+        simulation, "process_lc_file",
+        lambda _lc, _config, _pse, _sv, outfol: folders.append(os.path.basename(outfol)),
+    )
+    seen_labels = {}
+
+    def record_labels(_outpath, _stage_volume=None, labels=None):
+        seen_labels.update(labels or {})
+        return {"pairs_written": 0, "output_paths": []}
+
+    monkeypatch.setattr(simulation, "aggregate_q", record_labels)
+
+    simulation.run_eurotop({})
+
+    # the id when the API sends one; otherwise names that sanitize alike, or
+    # to nothing, must still land in distinct, non-empty folders
+    assert folders == ["3fa85f64-5717-4562-b3fc-2c963f66afa6", "01_Sea_Wall_1", "02_Sea_Wall_1", "03"]
+    # aggregation learns which name each id folder stands for
+    assert seen_labels == {"3fa85f64-5717-4562-b3fc-2c963f66afa6": "Sea Wall 1"}
