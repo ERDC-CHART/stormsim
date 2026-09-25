@@ -1,6 +1,6 @@
 [project]
 name = "stormsim"
-version = "0.1.18"
+version = "0.1.19"
 description = "A modular coastal storm simulation system for synthetic storm lifecycles and physical impact modeling."
 readme = "README.md"
 authors = [
