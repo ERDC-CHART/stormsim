@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -36,6 +37,10 @@ def run_simulation(
 
     all_dfs: List[pd.DataFrame] = []
 
+    # One generator for the whole run, so the same seed reproduces every lifecycle.
+    # No seed means an unseeded run.
+    rng = np.random.default_rng(simulation_params.get("seed"))
+
     for lc in range(num_lcs):
         df = sampling.simulate_lifecycle(
             lifecycle_index=lc,
@@ -46,6 +51,7 @@ def run_simulation(
             prob_schedule=prob_schedule,
             storm_set=storm_set,
             show_progress=False,
+            rng=rng,
         )
 
         if not df.empty:
@@ -86,11 +92,17 @@ def run_lc_generator(
         s3_config=s3_config
     )
 
-    # 2. Run Simulation
+    # 2. Run Simulation. Pick a seed when none is given and report it, so any run
+    # can be repeated.
+    simulation_params = dict(config["simulation_params"])
+    if simulation_params.get("seed") is None:
+        simulation_params["seed"] = int(np.random.default_rng().integers(2**63))
+    seed = int(simulation_params["seed"])
+    print(f"Lifecycle generation seed: {seed}")
     data = run_simulation(
         prob_schedule=prob_schedule,
         storm_set=storm_set,
-        simulation_params=config["simulation_params"],
+        simulation_params=simulation_params,
         location_id=config.get("location_id", "unknown_location")
     )
 
@@ -109,4 +121,4 @@ def run_lc_generator(
         else:
             print("[warn] No data generated; skipping validation.")
 
-    return {"status": "success", "output": output_target}
+    return {"status": "success", "output": output_target, "seed": seed}
