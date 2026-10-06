@@ -11,7 +11,7 @@ def run_simulation(
     prob_schedule: pd.DataFrame,
     storm_set: pd.DataFrame,
     simulation_params: Dict[str, Any],
-    location_id: str = "unknown_location",
+    location_id: Optional[str] = None,
     columns: Optional[List[str]] = None
 ) -> pd.DataFrame:
     """Core simulation orchestration logic."""
@@ -34,6 +34,10 @@ def run_simulation(
             "timestamp",
             "storm_id",
         ]
+    # An LCG serves every reach in a study, so it has no location of its own;
+    # location_id is a reach code and is set downstream where a run is per reach.
+    if location_id is None:
+        columns = [c for c in columns if c != "location_id"]
 
     all_dfs: List[pd.DataFrame] = []
 
@@ -55,7 +59,8 @@ def run_simulation(
         )
 
         if not df.empty:
-            df["location_id"] = location_id
+            if location_id is not None:
+                df["location_id"] = location_id
             all_dfs.append(df)
 
     if not all_dfs:
@@ -103,7 +108,7 @@ def run_lc_generator(
         prob_schedule=prob_schedule,
         storm_set=storm_set,
         simulation_params=simulation_params,
-        location_id=config.get("location_id", "unknown_location")
+        location_id=config.get("location_id")
     )
 
     # 3. Handle Output

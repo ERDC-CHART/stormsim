@@ -21,6 +21,12 @@ def process_lc_file(lc_file, config, pse_config, s_v_file, outfol):
     print(f"\nREADING lc: {fname}")
 
     lc_data = pd.read_parquet(lc_file)
+    # The caller's reach code is the location; the lifecycle rows are shared
+    # by every reach and carry none (older hydrographs carry a stale one).
+    if config.get("location_id"):
+        lc_data["location_id"] = config["location_id"]
+    elif "location_id" not in lc_data:
+        raise ValueError(f"{fname} has no location_id; pass the reach code as config['location_id']")
     args = pse_config.copy()
 
     base_outname = fname.replace(".parquet", "_responses.parquet").replace("EventDate_LC_", "")
