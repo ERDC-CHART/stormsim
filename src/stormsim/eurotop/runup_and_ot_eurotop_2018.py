@@ -133,8 +133,9 @@ class runup_and_ot_eurotop_2018:
     # Negative Freeboard Influence Factor
     def _negative_freeboard_influence_factor(self):
         ### NEgative Freeboard Influence Factor
+        # Overflow over the crest: broad-crested weir, q = 0.54 * sqrt(g * |Rc|^3) (m3/s per m)
         self.ifactors_q_overflow = np.where(self.structure_freeboard < 0,
-                                            0.54 * np.sqrt(self.gravity_constant * np.abs(self.structure_freeboard)),
+                                            0.54 * np.sqrt(self.gravity_constant * np.abs(self.structure_freeboard)**3),
                                             0)
         self.ifactors_Rc_corrt = np.where(self.structure_freeboard < 0, 0, self.structure_freeboard)
 
