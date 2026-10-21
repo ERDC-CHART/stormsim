@@ -38,6 +38,9 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 include = ["stormsim*"]
 
+[tool.setuptools.package-data]
+"stormsim.noaa_py" = ["noaa_sea_level_trends.json"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
