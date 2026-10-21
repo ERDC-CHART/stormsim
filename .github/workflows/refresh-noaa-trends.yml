@@ -1,0 +1,60 @@
+name: Refresh NOAA sea level trends
+
+# Rewrites src/stormsim/noaa_py/noaa_sea_level_trends.json from NOAA and opens
+# a PR when the station values changed. NOAA adds each past year once a year;
+# quarterly runs pick that up within three months. Run it by hand from the
+# Actions tab ("Run workflow") or `gh workflow run refresh-noaa-trends.yml`.
+on:
+  schedule:
+    - cron: "0 12 1 1,4,7,10 *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Fails, and writes nothing, if NOAA's payload or the cross-check is off.
+      - name: Refresh the snapshot
+        run: uv run python -c "from stormsim.noaa_py.sea_level_trends import refresh; refresh()"
+
+      - name: Open a PR if NOAA's values changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          f=src/stormsim/noaa_py/noaa_sea_level_trends.json
+          changed=$(git show "HEAD:$f" | python3 -c '
+          import json, sys
+          old = json.load(sys.stdin)["stations"]
+          new = json.load(open(sys.argv[1]))["stations"]
+          print(sum(old.get(k) != v for k, v in new.items()) + len(old.keys() - new.keys()))
+          ' "$f")
+          if [ "$changed" = "0" ]; then
+            echo "NOAA's station values are unchanged; nothing to commit."
+            exit 0
+          fi
+          branch="chore/noaa-trends-$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -qam "Refresh NOAA sea level trends snapshot"
+          git push origin "$branch"
+          body="NOAA's sea level trends changed for $changed stations. The snapshot's provenance block records the source, retrieval time and response SHA-256. Review, merge, then release so the Lambdas pick it up."
+          if ! gh pr create --base main --head "$branch" --title "Refresh NOAA sea level trends snapshot" --body "$body"; then
+            echo "::error::Could not open the PR (is 'Allow GitHub Actions to create and approve pull requests' on?). Open it from https://github.com/${{ github.repository }}/compare/main...$branch"
+            exit 1
+          fi
