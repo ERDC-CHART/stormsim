@@ -10,6 +10,9 @@ repeatable: its values are fixed by the stormsim version it ran.
 Refresh the snapshot from NOAA's derived-products API with
     python -c "from stormsim.noaa_py.sea_level_trends import refresh; refresh()"
 It refuses to write anything if NOAA's payload no longer looks as expected.
+The "Refresh NOAA sea level trends" workflow runs it quarterly, or on demand,
+and opens a PR when NOAA's values change. Loading a snapshot older than 18
+months prints a warning in the run's log.
 """
 import hashlib
 import json
@@ -32,11 +35,23 @@ INCHES_PER_DECADE_TO_MM_PER_YEAR = 2.54
 # the station's monthly mean sea level minus its deseasonalized mean, which
 # the monthly-means product serves in feet (checked for 8557380, 2026-10-20).
 SEASONAL_FEET_TO_M = 0.3048
+# seasonalCycleMonth is not in NOAA's documented output, so refresh checks it
+# for this station against the cycle implied by its monthly means.
+REFERENCE_STATION = "8557380"  # Lewes, record since 1919
+CROSS_CHECK_TOLERANCE_M = 0.005
+# NOAA adds each past year once a year; the refresh workflow runs quarterly.
+STALE_AFTER_DAYS = 548
 
 
 @lru_cache(maxsize=1)
 def _snapshot():
-    return json.loads(SNAPSHOT.read_text())
+    snapshot = json.loads(SNAPSHOT.read_text())
+    retrieved = datetime.fromisoformat(snapshot["provenance"]["retrieved_at"])
+    age = (datetime.now(timezone.utc) - retrieved).days
+    if age > STALE_AFTER_DAYS:
+        print(f"WARNING: stormsim's NOAA sea level trend snapshot was retrieved {age} days ago "
+              f"({retrieved.date()}), and NOAA updates it yearly. Refresh it with {REFRESH_COMMAND}")
+    return snapshot
 
 
 def provenance():
@@ -84,6 +99,32 @@ def _convert(row):
     return sid, entry
 
 
+def _cross_check(row, entry, timeout):
+    """ValueError unless the seasonal cycle matches the one the station's
+    monthly means imply: monthly mean sea level minus its deseasonalized mean,
+    averaged by calendar month."""
+    import requests
+
+    response = requests.get(row["monthlyMeans"], timeout=timeout)
+    response.raise_for_status()
+    means = response.json()
+    to_m = {"feet": 0.3048, "meters": 1.0}.get(means.get("units"))
+    if to_m is None:
+        raise ValueError(f"cross-check: monthly means are in {means.get('units')!r}, expected feet or meters")
+    by_month = {m: [] for m in range(1, 13)}
+    for r in means["data"]:
+        if r.get("msl") is not None and r.get("mslDeseasonalized") is not None:
+            by_month[r["month"]].append(r["msl"] - r["mslDeseasonalized"])
+    derived = [sum(v) / len(v) * to_m if v else math.nan for v in by_month.values()]
+    gaps = [abs(a - b) for a, b in zip(derived, entry["seasonal_m"])]
+    worst = max(range(12), key=lambda i: gaps[i] if math.isfinite(gaps[i]) else math.inf)
+    if not gaps[worst] <= CROSS_CHECK_TOLERANCE_M:  # also fails on NaN
+        raise ValueError(
+            f"cross-check: {entry['name']} seasonal cycle from sealvltrends differs from its "
+            f"monthly means by {gaps[worst]:.3f} m in month {worst + 1}; units or meaning changed?"
+        )
+
+
 def refresh(path=SNAPSHOT, timeout=60):
     """Fetch NOAA's current trends, check them, and rewrite the snapshot."""
     import requests
@@ -92,6 +133,10 @@ def refresh(path=SNAPSHOT, timeout=60):
     response.raise_for_status()
     rows = response.json()["SeaLvlTrends"]
     stations = dict(_convert(row) for row in rows)
+    reference = next((row for row in rows if row["stationId"] == REFERENCE_STATION), None)
+    if reference is None:
+        raise ValueError(f"reference station {REFERENCE_STATION} is missing from NOAA's payload")
+    _cross_check(reference, stations[REFERENCE_STATION], timeout)
     if len(stations) < 100:
         raise ValueError(f"only {len(stations)} stations in NOAA's payload; expected about 144")
 

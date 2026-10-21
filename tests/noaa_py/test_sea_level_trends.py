@@ -60,3 +60,45 @@ def test_refresh_refuses_changed_units(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="trendUnits"):
         sea_level_trends.refresh(out)
     assert not out.exists()
+
+
+def test_refresh_refuses_a_seasonal_cycle_its_monthly_means_contradict(monkeypatch, tmp_path):
+    lewes = sea_level_trends.station("8557380")
+    row = {
+        "stationId": "8557380", "stationName": "Lewes",
+        "trendUnits": "inches/decade", "seasonalUnits": "inches",
+        "trend": 1.49, "trendError": 0.05, "startDate": "", "endDate": "",
+        "seasonalCycleMonth": [{"month": m + 1, "seasonalVar": v / 0.3048}
+                               for m, v in enumerate(lewes["seasonal_m"])],
+        "monthlyMeans": "monthly-means",
+    }
+    # monthly means with no seasonal swing at all: the two sources disagree
+    means = {"units": "feet", "data": [
+        {"month": m, "msl": 0.1, "mslDeseasonalized": 0.1} for m in range(1, 13)]}
+
+    class Response:
+        status_code, headers, content = 200, {}, b"{}"
+        def __init__(self, body): self.body = body
+        def raise_for_status(self): pass
+        def json(self): return self.body
+
+    monkeypatch.setattr(requests, "get", lambda url, **k: Response(
+        means if url == "monthly-means" else {"SeaLvlTrends": [row]}))
+    out = tmp_path / "snapshot.json"
+    with pytest.raises(ValueError, match="cross-check"):
+        sea_level_trends.refresh(out)
+    assert not out.exists()
+
+
+def test_old_snapshot_warns(monkeypatch, tmp_path, capsys):
+    snapshot = json.loads(sea_level_trends.SNAPSHOT.read_text())
+    snapshot["provenance"]["retrieved_at"] = "2023-01-01T00:00:00+00:00"
+    old = tmp_path / "snapshot.json"
+    old.write_text(json.dumps(snapshot))
+    monkeypatch.setattr(sea_level_trends, "SNAPSHOT", old)
+    sea_level_trends._snapshot.cache_clear()
+    try:
+        sea_level_trends.station("8557380")
+    finally:
+        sea_level_trends._snapshot.cache_clear()
+    assert "WARNING" in capsys.readouterr().out
